@@ -1,0 +1,6 @@
+# 构建与运行所需的依赖
+opencv-python>=4.8
+numpy>=1.24
+PySide6>=6.6
+pillow>=10.0
+pyinstaller>=6.0
