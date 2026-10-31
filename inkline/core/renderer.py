@@ -203,6 +203,33 @@ def _ink_manga(g: np.ndarray, p: Params, s: float) -> np.ndarray:
     dark_cut = 0.30 - p.contrast / 100.0 * 0.12
     fills = _smoothstep(dark_cut - base, 0.0, 0.055)
 
+    # 只保留「成块」的暗部，细长的暗带（地平线、枝条）不涂黑，免得变成墨条
+    solid = (fills > 0.5).astype(np.uint8)
+    k = max(3, int(round(4 * s)) | 1)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+    solid = cv2.morphologyEx(solid, cv2.MORPH_OPEN, kernel)
+    if solid.any():
+        # 细长条（远处树线、栏杆）不涂黑：按连通域长宽比与面积筛一遍
+        n, labels, stats, _ = cv2.connectedComponentsWithStats(solid, 8)
+        min_area = max(80.0, 900.0 * s * s)
+        keep = np.zeros_like(solid)
+        for i in range(1, n):
+            x, y, w, h, area = stats[i]
+            if area < min_area:
+                continue
+            if max(w, h) > 6.0 * max(1.0, min(w, h)):
+                continue
+            # 贴边的暗部（背景、地平线）不涂黑，只填主体内部的暗块
+            if x <= 1 or y <= 1 or x + w >= solid.shape[1] - 1 or y + h >= solid.shape[0] - 1:
+                continue
+            keep[labels == i] = 1
+        solid = keep
+    if solid.any():
+        solid = cv2.dilate(solid, kernel)
+        fills = cv2.GaussianBlur(solid.astype(np.float32) * 255.0, (0, 0), max(0.6, s * 0.8)) / 255.0
+    else:
+        fills = np.zeros_like(fills)
+
     ink = np.maximum(lines, fills * 0.95)
     ink = _close_gaps(ink, s, size=3)
     return ink.astype(np.float32)
