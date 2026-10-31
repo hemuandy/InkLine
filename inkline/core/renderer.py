@@ -288,6 +288,39 @@ def _ink_wash(g: np.ndarray, p: Params, s: float) -> np.ndarray:
     return np.clip(ink, 0.0, 1.0).astype(np.float32)
 
 
+def _render_classic(gray: np.ndarray, p: Params) -> np.ndarray:
+    """原版算法（1.0 之前的 line_art_converter.py）：Canny + 反相 + 腐蚀加粗。
+
+    为了「原汁原味」，这条路径刻意不做百分位拉伸、保边降噪和多尺度融合，
+    直接在原图灰度上跑固定阈值附近的 Canny，因此也始终按原图分辨率计算。
+    """
+    detail = p.detail / 100.0
+    low = 16.0 + detail * 168.0                       # 细节密度 50 → 100（原版默认阈值 1）
+    high = low * (1.30 + (100 - p.contrast) / 100.0 * 1.55)   # 浓淡 55 → 约 2.0（原版 200/100）
+
+    g = np.ascontiguousarray(gray, dtype=np.uint8)
+    if p.smooth > 0:
+        g = cv2.GaussianBlur(g, (0, 0), p.smooth / 100.0 * 2.2)
+
+    edges = cv2.Canny(g, low, high)                   # 与原版一致：不启用 L2 梯度
+    out = 255 - (edges > 0).astype(np.uint8) * 255
+
+    if p.thickness > 1:
+        k = int(p.thickness)
+        out = cv2.erode(out, np.ones((k, k), np.uint8))   # 白底黑线，腐蚀＝加粗
+
+    if p.cleanup > 0:
+        mask = (out < 128).astype(np.uint8)
+        total, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+        if total > 1:
+            min_area = max(4.0, (p.cleanup / 100.0) ** 2 * 60.0)
+            keep = np.zeros(total, dtype=bool)
+            keep[1:] = stats[1:, cv2.CC_STAT_AREA] >= min_area
+            out = np.where(keep[labels], out, 255).astype(np.uint8)
+
+    return out
+
+
 _RENDERERS: Dict[str, Callable[[np.ndarray, Params, float], np.ndarray]] = {
     "line": _ink_line,
     "manga": _ink_manga,
@@ -358,17 +391,34 @@ def render(image: np.ndarray,
     started = time.perf_counter()
     p = params.clamped()
     p = p.with_values(method=_ALIASES.get(p.method, p.method))
-    img = resize_max(image, max_side)
 
-    gray = to_gray(img)
     scene: Optional[SceneInfo] = None
     note = ""
 
     if p.method == "smart":
-        scene = analysis or analyze(img)
+        scene = analysis or analyze(resize_max(image, 1400))
         p = auto_params(scene, p)
         p = p.with_values(method=_ALIASES.get(p.method, p.method))
         note = f"智能识别：{scene.label}"
+
+    if p.method == "classic":
+        # 原版算法按原图分辨率计算，预览与导出完全一致
+        out = _render_classic(to_gray(image), p)
+        if p.invert:
+            out = 255 - out
+        return RenderResult(
+            image=out,
+            method=p.method,
+            method_label=METHOD_LABELS.get(p.method, p.method),
+            scene=scene,
+            note=note,
+            elapsed=time.perf_counter() - started,
+            params=p,
+        )
+
+    img = resize_max(image, max_side)
+    gray = to_gray(img)
+
     if p.method not in _RENDERERS:
         p = p.with_values(method="line")
 

@@ -65,7 +65,8 @@ def style_grid() -> None:
         cells.append((METHOD_LABELS[key], res.image))
 
     cell_w, cell_h, pad, top = 420, 560, 16, 44
-    cols, rows = 3, 2
+    cols = 4
+    rows = max(2, (len(cells) + cols - 1) // cols)
     width = cols * cell_w + pad * (cols + 1)
     height = rows * (cell_h + top) + pad * (rows + 1)
     canvas = Image.new("RGB", (width, height), BG)

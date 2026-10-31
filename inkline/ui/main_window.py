@@ -25,6 +25,7 @@ from .workers import RenderQueue
 
 #: 每种风格对应的默认参数（点风格按钮时载入）
 METHOD_DEFAULTS: Dict[str, Dict[str, int]] = {
+    "classic": dict(detail=50, thickness=1, contrast=55, smooth=0, cleanup=0),
     "line": dict(detail=55, thickness=2, contrast=55, smooth=35, cleanup=30),
     "manga": dict(detail=52, thickness=3, contrast=60, smooth=48, cleanup=45),
     "minimal": dict(detail=40, thickness=3, contrast=50, smooth=55, cleanup=55),
@@ -198,7 +199,7 @@ class MainWindow(QMainWindow):
             button.setToolTip(_hint)
             button.setMinimumHeight(38)
             button.clicked.connect(lambda _checked=False, k=key: self.set_method(k))
-            grid.addWidget(button, index // 3, index % 3)
+            grid.addWidget(button, index // 4, index % 4)
             self._method_group[key] = button
         card.body.addLayout(grid)
 
